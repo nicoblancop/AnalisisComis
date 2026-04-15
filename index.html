@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PANEL DE CONTROL - IFA MARCONI NBP</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-treemap@2.3.0/dist/chartjs-chart-treemap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans pb-12">
+    <div id="dashboard-content" class="max-w-7xl mx-auto px-4 py-8">
+        <header class="flex flex-col md:flex-row justify-between items-center mb-8 bg-white p-6 rounded-xl shadow-sm border border-slate-200 gap-4">
+            <div>
+                <h1 class="text-2xl font-black text-slate-800 tracking-tight uppercase">Panel de Control de Comisiones</h1>
+                <p class="text-blue-600 font-bold uppercase text-xs tracking-widest">IFA MARCONI NBP</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <input type="file" id="fileInput" accept=".xlsx, .xls, .csv" class="hidden"/>
+                <button onclick="document.getElementById('fileInput').click()" class="bg-blue-900 hover:bg-blue-950 text-white px-5 py-2 rounded-lg font-bold text-sm transition-all shadow-md">Cargar Datos</button>
+                <button onclick="exportToPDF()" id="pdfBtn" class="hidden bg-red-50 hover:bg-red-100 text-red-700 px-5 py-2 rounded-lg font-bold text-sm border border-red-200 transition-all">Exportar PDF</button>
+            </div>
+        </header>
+
+        <div id="filtersArea" class="hidden grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+            <div class="bg-white p-4 rounded-lg shadow-sm border"><label class="block text-[10px] font-bold text-slate-400 mb-1 uppercase">Mes</label><select id="filterMonth" class="w-full bg-slate-50 border rounded p-2 text-sm outline-none"></select></div>
+            <div class="bg-white p-4 rounded-lg shadow-sm border"><label class="block text-[10px] font-bold text-slate-400 mb-1 uppercase">Día</label><select id="filterDay" class="w-full bg-slate-50 border rounded p-2 text-sm outline-none"><option value="ALL">Mes Completo</option></select></div>
+            <div class="bg-white p-4 rounded-lg shadow-sm border"><label class="block text-[10px] font-bold text-slate-400 mb-1 uppercase">Cliente</label><input type="text" id="filterClient" placeholder="Buscar..." class="w-full bg-slate-50 border rounded p-2 text-sm outline-none"></div>
+            <div class="bg-white p-4 rounded-lg shadow-sm border"><label class="block text-[10px] font-bold text-slate-400 mb-1 uppercase">Ticker</label><select id="filterTicker" class="w-full bg-slate-50 border rounded p-2 text-sm outline-none"><option value="ALL">Todos</option></select></div>
+            <div class="bg-white p-4 rounded-lg shadow-sm border"><label class="block text-[10px] font-bold text-slate-400 mb-1 uppercase">Operación</label><select id="filterOp" class="w-full bg-slate-50 border rounded p-2 text-sm outline-none"><option value="ALL">Todas</option><option value="COMPRA">COMPRA</option><option value="VENTA">VENTA</option><option value="OTRO">OTRO</option></select></div>
+        </div>
+
+        <div id="stats" class="hidden grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <div class="bg-white p-6 rounded-xl shadow-sm border-l-4 border-blue-900"><p class="text-xs font-bold text-slate-400 uppercase mb-1">Total Comisiones</p><p id="mtd" class="text-3xl font-black text-slate-800">USD 0</p></div>
+            <div class="bg-white p-6 rounded-xl shadow-sm border-l-4 border-slate-400"><p class="text-xs font-bold text-slate-400 uppercase mb-1">Promedio Diario</p><p id="avg" class="text-3xl font-black text-slate-800">USD 0</p></div>
+            <div class="bg-white p-6 rounded-xl shadow-sm border-l-4 border-blue-500"><p class="text-xs font-bold text-slate-400 uppercase mb-1">Run Rate Mes</p><p id="runRate" class="text-3xl font-black text-slate-800">USD 0</p></div>
+            <div class="bg-white p-6 rounded-xl shadow-sm border-l-4 border-blue-200"><p class="text-xs font-bold text-slate-400 uppercase mb-1">Share FX</p><p id="fxPercent" class="text-3xl font-black text-slate-800">0%</p></div>
+        </div>
+
+        <div id="chartsArea" class="hidden space-y-8">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border">
+                    <div class="flex justify-between items-center mb-6">
+                        <h3 class="font-bold text-slate-700 uppercase text-xs">Evolución Diaria y Media Móvil (7d)</h3>
+                        <span class="text-[9px] bg-slate-100 px-2 py-1 rounded text-slate-400 font-bold uppercase italic">FCI activos se contabilizan el último día</span>
+                    </div>
+                    <div class="h-[350px]"><canvas id="dailyChart"></canvas></div>
+                </div>
+                <div class="bg-white p-6 rounded-xl shadow-sm border">
+                    <h3 class="font-bold text-slate-700 mb-4 uppercase text-xs text-center lg:text-left">Mix por Instrumento</h3>
+                    <div class="h-[350px]"><canvas id="treemapChart"></canvas></div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div class="bg-white p-6 rounded-xl shadow-sm border h-full">
+                    <h3 class="font-bold text-slate-700 mb-4 uppercase text-xs">Top 15 Clientes</h3>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-sm"><tbody id="topClientsList" class="divide-y"></tbody></table>
+                    </div>
+                </div>
+                <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border">
+                    <h3 class="font-bold text-slate-700 mb-4 uppercase text-xs">Mix por Ticker (Top 15 - Mercado)</h3>
+                    <p class="text-[9px] text-slate-400 italic mb-4 uppercase">Excluye operaciones de tipo Minuta</p>
+                    <div class="h-[500px]">
+                        <canvas id="tickerChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <footer class="mt-12 pt-8 border-t border-slate-200">
+            <p class="text-[10px] text-slate-400 leading-relaxed uppercase font-semibold text-justify mb-4">
+                Aviso Legal: Herramienta Beta para IFA MARCONI NBP. Los cálculos son informativos. Verifique contra sistemas oficiales. Operaciones FX contemplan AL30 y SENEBI (Minutas).
+            </p>
+            <div class="flex justify-between items-center">
+                <span class="text-slate-300 font-bold text-[10px]">VERSIÓN 1.6</span>
+                <span class="text-slate-300 font-bold text-[10px]">IFA MARCONI NBP</span>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        let rawData = [];
+        let charts = {};
+
+        // Plugin Línea 50%
+        const verticalLinePlugin = {
+            id: 'verticalLine',
+            afterDraw: (chart) => {
+                if (chart.config.options.plugins.verticalLine) {
+                    const {ctx, chartArea: {top, bottom}, scales: {x}} = chart;
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.lineWidth = 1;
+                    ctx.setLineDash([4, 4]);
+                    ctx.strokeStyle = '#94a3b8';
+                    const xPos = x.getPixelForValue(50);
+                    ctx.moveTo(xPos, top); ctx.lineTo(xPos, bottom);
+                    ctx.stroke();
+                    ctx.restore();
+                }
+            }
+        };
+        Chart.register(verticalLinePlugin);
+
+        document.getElementById('fileInput').addEventListener('change', handleFile);
+        ['filterMonth', 'filterDay', 'filterTicker', 'filterOp'].forEach(id => {
+            document.getElementById(id).addEventListener('change', updateDashboard);
+        });
+        document.getElementById('filterClient').addEventListener('input', updateDashboard);
+
+        function handleFile(e) {
+            const file = e.target.files[0];
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, {type: 'array', cellDates: true});
+                rawData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+                initFilters(rawData);
+                document.getElementById('pdfBtn').classList.remove('hidden');
+                updateDashboard();
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function initFilters(data) {
+            const months = [...new Set(data.map(r => {
+                const d = new Date(r.FechaConcertacion);
+                return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+            }))].sort().reverse();
+            document.getElementById('filterMonth').innerHTML = months.map(m => `<option value="${m}">${m}</option>`).join('');
+            const tickers = [...new Set(data.map(r => String(r.Ticker || '').trim()).filter(Boolean))].sort();
+            document.getElementById('filterTicker').innerHTML = '<option value="ALL">Todos</option>' + tickers.map(t => `<option value="${t}">${t}</option>`).join('');
+            document.getElementById('filtersArea').classList.remove('hidden');
+            document.getElementById('stats').classList.remove('hidden');
+            document.getElementById('chartsArea').classList.remove('hidden');
+            updateDayFilter();
+        }
+
+        function updateDayFilter() {
+            const selectedMonth = document.getElementById('filterMonth').value;
+            const days = [...new Set(rawData.filter(r => `${new Date(r.FechaConcertacion).getFullYear()}-${String(new Date(r.FechaConcertacion).getMonth() + 1).padStart(2, '0')}` === selectedMonth).map(r => new Date(r.FechaConcertacion).getDate()))].sort((a,b) => a - b);
+            document.getElementById('filterDay').innerHTML = '<option value="ALL">Mes Completo</option>' + days.map(d => `<option value="${d}">${d}</option>`).join('');
+        }
+
+        function updateDashboard() {
+            const month = document.getElementById('filterMonth').value;
+            const day = document.getElementById('filterDay').value;
+            const clientSearch = document.getElementById('filterClient').value.toLowerCase();
+            const tickerFilter = document.getElementById('filterTicker').value;
+            const opFilter = document.getElementById('filterOp').value;
+
+            const filtered = rawData.filter(r => {
+                const d = new Date(r.FechaConcertacion);
+                const rMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                const rDay = String(d.getDate());
+                const ticker = String(r.Ticker || '').trim();
+                const desc = (r.Descripcion || "").toUpperCase();
+                let op = desc.includes("COMPRA") ? "COMPRA" : (desc.includes("VENTA") ? "VENTA" : "OTRO");
+
+                return rMonth === month && (day === 'ALL' || rDay === day) && (String(r.Cuenta).toLowerCase().includes(clientSearch)) && (tickerFilter === 'ALL' || ticker === tickerFilter) && (opFilter === 'ALL' || op === opFilter);
+            });
+            processAndRender(filtered, month);
+        }
+
+        function processAndRender(data, selectedMonth) {
+            let total = 0, fxTotal = 0;
+            const daily = {}, clientMap = {}, tickerStats = {}, typeStats = {};
+
+            data.forEach(r => {
+                const val = parseFloat(r.ComisionDolarizada) || 0;
+                const dKey = new Date(r.FechaConcertacion).toISOString().split('T')[0];
+                const ticker = String(r.Ticker || 'S/D').trim();
+                const tipo = r.Tipo || "Otro";
+                const desc = (r.Descripcion || "").toUpperCase();
+                let op = desc.includes("COMPRA") ? "COMPRA" : (desc.includes("VENTA") ? "VENTA" : "OTRO");
+
+                total += val;
+                if(ticker === 'AL30' || tipo === 'Minuta') fxTotal += val;
+                daily[dKey] = (daily[dKey] || 0) + val;
+                clientMap[r.Cuenta] = (clientMap[r.Cuenta] || 0) + val;
+                typeStats[tipo] = (typeStats[tipo] || 0) + val;
+                
+                // EXCLUSIÓN DE MINUTAS PARA EL MIX POR TICKER
+                if(tipo !== 'Minuta') {
+                    if(!tickerStats[ticker]) tickerStats[ticker] = { COMPRA: 0, VENTA: 0, OTRO: 0, total: 0 };
+                    tickerStats[ticker][op] += val;
+                    tickerStats[ticker].total += val;
+                }
+            });
+
+            const [y, m] = selectedMonth.split('-').map(Number);
+            const daysInMonth = new Date(y, m, 0).getDate();
+            const today = new Date();
+            const isCurrentMonth = (today.getFullYear() === y && (today.getMonth() + 1) === m);
+            const daysPassed = isCurrentMonth ? today.getDate() : daysInMonth;
+            const dailyAvg = total / (daysPassed || 1);
+
+            document.getElementById('mtd').innerText = `USD ${total.toLocaleString(undefined, {maximumFractionDigits:0})}`;
+            document.getElementById('avg').innerText = `USD ${dailyAvg.toLocaleString(undefined, {maximumFractionDigits:0})}`;
+            document.getElementById('runRate').innerText = `USD ${(dailyAvg * daysInMonth).toLocaleString(undefined, {maximumFractionDigits:0})}`;
+            document.getElementById('fxPercent').innerText = `${((fxTotal / (total || 1)) * 100).toFixed(1)}%`;
+
+            const sortedClients = Object.entries(clientMap).sort((a,b) => b[1] - a[1]).slice(0, 15);
+            document.getElementById('topClientsList').innerHTML = sortedClients.map(([name, val]) => `
+                <tr class="text-[10px]"><td class="py-2 pr-2 font-bold text-slate-600">${name}</td><td class="text-right font-black">USD ${Math.round(val).toLocaleString()}</td></tr>
+            `).join('');
+
+            renderCharts(daily, tickerStats, typeStats);
+        }
+
+        function renderCharts(daily, tickers, types) {
+            Object.values(charts).forEach(c => c.destroy());
+            const dates = Object.keys(daily).sort();
+            const values = dates.map(d => daily[d]);
+            const ma7 = values.map((v, i) => {
+                const slice = values.slice(Math.max(0, i - 6), i + 1);
+                return slice.reduce((a, b) => a + b, 0) / slice.length;
+            });
+
+            charts.daily = new Chart(document.getElementById('dailyChart'), {
+                type: 'line',
+                data: { labels: dates, datasets: [
+                    { label: 'Facturación', data: values, borderColor: '#1e3a8a', backgroundColor: '#1e3a8a08', fill: true, tension: 0.3 },
+                    { label: 'Media Móvil 7d', data: ma7, borderColor: '#3b82f6', borderDash: [5, 5], tension: 0.3 }
+                ]},
+                options: { responsive: true, maintainAspectRatio: false }
+            });
+
+            const bluePalette = ['#0f172a', '#1e293b', '#334155', '#475569', '#64748b', '#94a3b8', '#cbd5e1'];
+            charts.treemap = new Chart(document.getElementById('treemapChart'), {
+                type: 'treemap',
+                data: { datasets: [{
+                    tree: Object.entries(types).map(([k,v]) => ({type: k, value: v})),
+                    key: 'value',
+                    groups: ['type'],
+                    backgroundColor: (ctx) => bluePalette[ctx.index % bluePalette.length],
+                    labels: { display: true, color: 'white', font: { size: 10, weight: 'bold' }, formatter: (ctx) => ctx.raw._data.type }
+                }]},
+                options: { maintainAspectRatio: false, plugins: { legend: { display: false } } }
+            });
+
+            const tEntries = Object.entries(tickers).sort((a,b) => b[1].total - a[1].total).slice(0, 15);
+            charts.ticker = new Chart(document.getElementById('tickerChart'), {
+                type: 'bar',
+                data: {
+                    labels: tEntries.map(t => t[0]),
+                    datasets: [
+                        { label: 'Compra', data: tEntries.map(t => (t[1].COMPRA/t[1].total)*100), backgroundColor: '#1e3a8a' },
+                        { label: 'Venta', data: tEntries.map(t => (t[1].VENTA/t[1].total)*100), backgroundColor: '#60a5fa' },
+                        { label: 'Otro', data: tEntries.map(t => (t[1].OTRO/t[1].total)*100), backgroundColor: '#cbd5e1' }
+                    ]
+                },
+                options: { 
+                    indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+                    scales: { x: { stacked: true, max: 100, ticks: { callback: v => v + '%' } }, y: { stacked: true, ticks: { font: { weight: 'bold', size: 10 } } } },
+                    plugins: { legend: { position: 'bottom' }, verticalLine: true }
+                }
+            });
+        }
+
+        function exportToPDF() {
+            html2pdf().set({ margin: 0.2, filename: 'Performance_IFA_v1.6.pdf', jsPDF: { format: 'a3', orientation: 'portrait' } }).from(document.getElementById('dashboard-content')).save();
+        }
+    </script>
+</body>
+</html>
